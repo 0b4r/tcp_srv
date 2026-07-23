@@ -1,80 +1,80 @@
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <unistd.h>
 #include <sys/socket.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#define PORT 3434
-#define BACKLOG 3
-#define MAX_RES 256
+#define OUT_PORT 2324
+#define MSG_MAXLEN 1024
 
 int main(void)
 {
-    int server_fd;
-    int opt = 1;
-    struct sockaddr_in address;
-    socklen_t addrlen = sizeof(address);
-
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (server_fd < 0) {
-        perror("socket creation failed");
+    int srv_fd;
+    int yes = 1;
+    struct sockaddr_in srv_addr = {0};
+    socklen_t srv_addr_len = sizeof(srv_addr);
+    
+    srv_fd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    if (srv_fd < 0) {
+        perror("socket");
         exit(EXIT_FAILURE);
     }
-
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        perror("setsockopt failed");
+    if (setsockopt(srv_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
+        perror("setsockopt");
         exit(EXIT_FAILURE);
     }
-
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = htons(PORT);
-
-    if (bind(server_fd, (struct sockaddr*)&address, addrlen) < 0) {
-        perror("binding failed");
+    
+    srv_addr.sin_family = AF_INET;
+    srv_addr.sin_port = htons(OUT_PORT);
+    srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    
+    if (bind(srv_fd, (struct sockaddr *)&srv_addr, srv_addr_len) < 0) {
+        perror("bind");
         exit(EXIT_FAILURE);
     }
-
-    if (listen(server_fd, BACKLOG) < 0) {
-        perror("listen failed");
+    
+    if (listen(srv_fd, 3) < 0) {
+        perror("listen");
         exit(EXIT_FAILURE);
     }
-
-    int client_fd;
-    struct sockaddr_in client_address;
-    socklen_t client_addrlen = sizeof(client_address);
-    client_fd = accept(server_fd, (struct sockaddr*)&client_address, &client_addrlen);
-
-    if (client_fd < 0) {
-        perror("accept failed");
-        exit(EXIT_FAILURE);
-    }
-
-    char msg[MAX_RES] = {0};
-
-    ssize_t bytes_recv = recv(client_fd, msg, sizeof(msg) - 1, 0);
-    if (bytes_recv < 0) {
-        perror("recv failed");
-    } else if (bytes_recv == 0) {
-        printf("client disconnect\n");
-    } else {
-
-        msg[bytes_recv] = '\0';
-        msg[strcspn(msg, "\r\n")] = '\0';
-
-        char *rep = "pong\r\n";
-        if (strcasecmp(msg, "PING") == 0) {
-            ssize_t bytes_sent = send(client_fd, rep, strlen(rep), 0); 
-            if (bytes_sent < 0) {
-                perror("send");
+    
+    printf("listening ..\n");
+    
+    int usr_fd;
+    struct sockaddr_in usr_addr = {0};
+    socklen_t usr_addr_len = sizeof(usr_addr);
+    char usr_ip[INET_ADDRSTRLEN] = {0};
+    while (1) {
+        usr_fd = accept(srv_fd, (struct sockaddr *)&usr_addr, &usr_addr_len);
+        
+        if (usr_fd < 0) {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+        
+        inet_ntop(AF_INET, &usr_addr.sin_addr, usr_ip, sizeof(usr_ip));
+        
+        printf("received connection from %s:%d\n", usr_ip, ntohs(usr_addr.sin_port));
+        
+        char usr_msg[MSG_MAXLEN] = {0};
+        while (1) {
+            ssize_t msg_len = recv(usr_fd, usr_msg, sizeof(usr_msg), 0);
+            
+            if (msg_len == 0) {
+                printf("client %s:%d disconnected\n", usr_ip, ntohs(usr_addr.sin_port));
+                break;
+            } else if (msg_len < 0) {
+                perror("recv");
+            } else {
+                
             }
         }
     }
-
-    close(client_fd);
-    close(server_fd);
+    close(usr_fd);
+    close(srv_fd);
+    
     return 0;
-}
+}    
